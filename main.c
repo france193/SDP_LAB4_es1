@@ -30,7 +30,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-#define NUMBER_INTEGERS_FILE 3
+#define NUMBER_INTEGERS_FILE 1000
 
 // global variables
 int n, *array, size;
@@ -52,7 +52,7 @@ typedef struct {
 int main(int argc, char **argv) {
     pthread_t th;
     Region *region;
-    int fdin;
+    int fdin, len;
     struct stat statbuf;
     char *paddr;
 
@@ -68,8 +68,9 @@ int main(int argc, char **argv) {
     // create binary file containing sequence of random intergers
     create_binary_file(argv[1]);
 
-    /* open input file */
-    if ((fdin = open(argv[1], O_RDONLY)) < 0) {
+    // open input file
+    // must be RDWR because we will write the modification after editing mapped file
+    if ((fdin = open(argv[1], O_RDWR)) < 0) {
         printf("can't open %s for reading", argv[1]);
         exit(-2);
     }
@@ -80,14 +81,19 @@ int main(int argc, char **argv) {
         exit(-3);
     }
 
+    len = (int) statbuf.st_size;
+
     // n contains the number of integers
     // divide by sizeof(int) because binary file contains integers
-    n = statbuf.st_size / sizeof (int);
+    n = len / sizeof (int);
     printf(" > In this file there are %d integers!\n", n);
 
     // mmap the input file (does not work on Windows filesystem)
-    if ((paddr = mmap(0, statbuf.st_size, PROT_READ, MAP_SHARED, fdin, 0)) == (caddr_t) -1) {
-        printf("mmap error for input");
+    // PROT_READ | PROT_WRITE are needed because the mapped file will be modified
+    // MAP_SHARED is to permit all thread to read modification
+    if ((paddr = mmap((caddr_t) 0, (size_t) len, PROT_READ | PROT_WRITE, MAP_SHARED, fdin, 0)) == (caddr_t) -1) {
+        perror("mmap");
+        //printf("mmap error for input");
         exit(-4);
     }
 
@@ -134,7 +140,7 @@ void create_binary_file(char *filename) {
 
     //fill array v
     for(i = 0; i < NUMBER_INTEGERS_FILE; i++) {
-        tmp[i] = rand() % 100; // random number from 0 to 99
+        tmp[i] = rand() % 1000; // random number from 0 to 999
     }
 
     // save to text file in binary
@@ -152,8 +158,6 @@ void print_array(int *array) {
 }
 
 void *quick_sort_thread(void *arg) {
-    printf("Start quick sort:\n");
-
     Region *region = (Region *) arg;
     int left = region->left;
     int right = region->right;
@@ -161,8 +165,7 @@ void *quick_sort_thread(void *arg) {
     pthread_t th1, th2;
 
     if (left >= right) {
-        printf("Error\n");
-        exit(-7);
+        return NULL;
     }
 
     //arrays of length smaller than <size> are sorted by standard qsort
